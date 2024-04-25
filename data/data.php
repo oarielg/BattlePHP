@@ -38,18 +38,18 @@ enum EnchantmentType
     case WeaponDrain;
 }
 
-enum DamageType
+enum DamageType:string
 {
-    case Slashing;
-    case Piercing;
-    case Bludgeoning;
-    case Fire;
-    case Cold;
-    case Thunder;
-    case Earth;
-    case Radiant;
-    case Necrotic;
-    case Psychic;
+    case Slashing = 'Slashing';
+    case Piercing = 'Piercing';
+    case Bludgeoning = 'Bludgeoning';
+    case Fire = 'Fire';
+    case Cold = 'Cold';
+    case Thunder = 'Thunder';
+    case Earth = 'Earth';
+    case Radiant = 'Radiant';
+    case Necrotic = 'Necrotic';
+    case Psychic = 'Psychic';
 }
 
 class Data

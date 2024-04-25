@@ -1,6 +1,6 @@
 <?php
 
-require "data/data.php";
+require dirname(__DIR__)."/data/data.php";
 
 enum BattleState
 {
@@ -28,11 +28,15 @@ class Battle
         $this->battle_state = BattleState::InProgress;
         $this->battle_text = "";
 
+        $this->init($this->player);
+        $this->init($this->monster);
+
         // this should be moved elsewhere
         $this->battle_quotes = [
             "attackhit" => "<b>%s</b> attacked with <i>%s</i> for <b>%s</b> damage.",
             "attackcritical" => "Critical hit! <b>%s</b> attacked with <i>%s</i> for <b>%s</b> damage.",
             "attackmiss" => "<b>%s</b> attacked with <i>%s</i> but missed.",
+            "attackfail" => "<b>%s</b> attacked with <i>%s</i> but <b>%s</b> is immune!.",
             "attackextrahit" => "<b>%s's</b> attack did <b>%s</b> extra %s damage.",
             "attackextrafail" => "<b>%s's</b> attack do extra %s damage but <b>%s</b> is immune!",
             "attacklifesteal" => "<b>%s</b> recovered <b>%s</b> HP from their attack.",
@@ -78,11 +82,11 @@ class Battle
 
         if (isset($post['attack']))
         {
-
+            $this->attack_turn($condition_check, $this->player, $this->monster);
         }
         elseif (isset($post['spell']))
         {
-
+            $this->spell_turn($condition_check, $_POST['spell_id'], $this->player, $this->monster);
         }
         elseif (isset($post['run']))
         {
@@ -92,10 +96,182 @@ class Battle
 
     private function monster_turn():void
     {
+        $condition_check = ["is_free" => true, "can_cast" => true, "is_charmed" => false];
+        $this->check_condition_action($this->monster['conditions'], $condition_check);
 
+        switch($this->monster['class'])
+        {
+            case MonsterClass::Fighter:
+                $this->attack_turn($condition_check, $this->monster, $this->player);
+                break;
+            case MonsterClass::Caster:
+                break;
+            case MonsterClass::Hybrid:
+                break;
+        }
     }
 
-    function run_turn(array $condition_check):void
+    private function attack_turn(array $condition_check, array &$attacker, array &$defender):void
+    {
+        if (!$condition_check['is_free'] || $condition_check['is_charmed'])
+            return;
+
+        $this->attack_action($attacker, $attacker['items'][0], $defender);
+        if ($attacker['items'][1] != 0)
+        {
+            if ($attacker['items'][1]['type'] == ItemType::Weapon)
+            {
+                $this->attack_action($attacker, $attacker['items'][1], $defender);
+            }
+        }
+    }
+
+    private function spell_turn(array $condition_check, int $spell_id, array &$attacker, array &$defender):void
+    {       
+        if (!$condition_check['is_free'] || !$condition_check['can_cast'])
+            return;
+
+        $spell = Data::get_spell($spell_id);
+
+        switch($spell['type'])
+        {
+            case SpellType::Healing:
+                if ($attacker['attributes']['currenthp'] == $attacker['attributes']['maxhp'])
+                {
+                    $this->add_battle_line(sprintf($spell['missquote'], $attacker['name']));
+                }
+                else
+                {
+                    $heal = rand(1,6) + $spell['variable2'] + $attacker['attributes']['power'];
+                    $new_hp = $attacker['attributes']['currenthp'] + $heal;
+                    if ($new_hp > $attacker['attributes']['maxhp'])
+                    {
+                        $heal = $attacker['attributes']['maxhp'] - $attacker['attributes']['currenthp'];
+                        $new_hp = $attacker['attributes']['currenthp'] + $heal;
+                    }
+                    $attacker['attributes']['currenthp'] = $new_hp;
+                    $this->add_battle_line(sprintf($spell['hitquote'], $attacker['name'], $heal));
+                }
+                break;
+            case 2: // cause condition
+                if ($condition_check['is_charmed'])
+                    return;
+                $chance = $this->check($attacker['attributes']['power'], $defender['attributes']['mind']);
+                $roll = rand(1, 20);
+                if ($roll >= $chance)
+                {
+                    if ($this->has_condition_immunity($defender['condimmunities'], $spell['variable']))
+                    {
+                        $this->add_battle_line(sprintf($spell['fail2quote'], $attacker['name'], $defender['name']));
+                    }
+                    else
+                    {
+                        if ($this->has_condition($defender['conditions'], $spell['variable']))
+                        {
+                            $this->add_battle_line(sprintf($spell['failquote'], $attacker['name'], $defender['name']));
+                        }
+                        else
+                        {
+                            $condition = Data::get_condition($spell['variable']);
+                            array_push($defender['conditions'], [$spell['variable'], rand($condition['minduration'], $condition['maxduration'])]);                         
+                            $this->add_battle_line(sprintf($spell['hitquote'], $attacker['name'], $defender['name']));
+                            //$this->apply_condition_immediately($defender, $condition);
+                        }
+                    }
+                }
+                else
+                {
+                    $this->add_battle_line(sprintf($spell['missquote'], $attacker['name'], $defender['name']));
+                }
+                break;
+            case 3: // do damage
+                if ($condition_check['is_charmed'])
+                    return;
+                $chance = $this->check($attacker['attributes']['power'], $defender['attributes']['speed']);
+                $roll = rand(1, 20);
+                if ($roll >= $chance)
+                {
+                    if ($this->is_immune_damage($defender['damimmunities'], $spell['variable']))
+                    {
+                        $this->add_battle_line(sprintf($spell['failquote'], $attacker['name'], $defender['name']));
+                    }
+                    else
+                    {
+                        $vulnerable_text = '';
+                        $damage = rand(1,6) + $spell['variable2'] + $attacker['attributes']['power'];
+                        $resistance = $this->has_resistance_damage($defender['resistances'], $spell['variable']);
+                        if ($this->has_vulnerability_damage($defender['vulnerabilities'], $spell['variable']))
+                        {
+                            $damage += rand(1,6);
+                            $vulnerable_text = $defender['name']." is vulnerable!";
+                        }
+                        $damage = max(($damage-$resistance), 0);
+                        $defender['attributes']['currenthp'] -= $damage;
+                        $this->add_battle_line(sprintf($spell['hitquote'], $attacker['name'], $damage), $vulnerable_text);
+                    }
+                }
+                else
+                {
+                    $this->add_battle_line(sprintf($spell['missquote'], $attacker['name'], $defender['name']));
+                }
+                break;
+            case 4: // drain
+                if ($condition_check['is_charmed'])
+                    return;
+                $chance = $this->check($attacker['attributes']['power'], $defender['attributes']['speed']);
+                $roll = rand(1, 20);
+                if ($roll >= $chance)
+                {
+                    if ($this->is_immune_damage($defender['damimmunities'], $spell['variable']))
+                    {
+                        $this->add_battle_line(sprintf($spell['failquote'], $attacker['name'], $defender['name']));
+                    }
+                    else
+                    {
+                        $damage = rand(1,3) + $spell['variable2'] + $attacker['attributes']['power'];
+                        $resistance = $this->has_resistance_damage($defender['resistances'], $spell['variable']);
+                        $damage = max(($damage-$resistance), 0);
+                        $defender['attributes']['currenthp'] -= $damage;
+                        $heal = ceil($damage/2);
+                        $new_hp = $attacker['attributes']['currenthp'] + $heal;
+                        if ($new_hp > $attacker['attributes']['maxhp'])
+                        {
+                            $heal = $attacker['attributes']['maxhp'] - $attacker['attributes']['currenthp'];
+                            $new_hp = $attacker['attributes']['currenthp'] + $heal;
+                        }
+                        $attacker['attributes']['currenthp'] = $new_hp;
+                        $this->add_battle_line(sprintf($spell['hitquote'], $attacker['name'], $damage, $heal));
+                    }
+                }
+                else
+                {
+                    $this->add_battle_line(sprintf($spell['missquote'], $attacker['name'], $defender['name']));
+                }
+                break;
+            case 5: // activate effect
+                $chance = $this->check($attacker['attributes']['power'], 1);
+                $roll = rand(1, 20);
+                if ($roll >= $chance)
+                {
+                    if (!$this->has_effect_on($attacker['effects'], $spell['variable']))
+                    {
+                        array_push($attacker['effects'], $spell['variable']);
+                        $this->add_battle_line(sprintf($spell['hitquote'], $attacker['name']));
+                    }
+                    else
+                    {
+                        $this->add_battle_line(sprintf($spell['failquote'], $attacker['name']));
+                    }
+                }
+                else
+                {
+                    $this->add_battle_line(sprintf($spell['missquote'], $attacker['name']));
+                }
+                break;
+        }
+    }
+
+    private function run_turn(array $condition_check):void
     {
         if (!$condition_check['is_free'] || $condition_check['is_charmed'])
             return;
@@ -114,6 +290,180 @@ class Battle
         }
     }
 
+    private function attack_action(array &$attacker, mixed $weapon, array &$defender):void
+    {
+        $attack = $attacker['attributes']['might'];
+        $damage = rand(1, 6) + $attacker['attributes']['might'];
+        $weapon_name = "Fists";
+
+        if (!empty($weapon))
+        {
+            $attack += $weapon['attack'];
+            $damage += $weapon['damage'];
+            $weapon_name = $weapon['name'];
+        }
+
+        $defense = $defender['attributes']['speed'];
+        $armor = 0;
+
+        // do you have an armor?
+        if ($defender['items'][2] != 0) 
+        {
+            $defense += $defender['items'][2]['defense'];
+            $armor += $defender['items'][2]['armor'];
+        }
+
+        // have anything in secondary slot?
+        if ($defender['items'][1] != 0) 
+        {
+            // is it a shield?
+            if ($defender['items'][1]['type'] == ItemType::Shield) 
+            {
+                $defense += $defender['items'][1]['defense'];
+                $armor += $defender['items'][1]['armor'];
+            }
+        }
+
+        $roll = rand(1, 20);
+        $chance = $this->check($attack, $defense);
+        if ($roll >= $chance || $roll == 20)
+        {
+            if ($this->is_immune_damage($defender['damimmunities'], $weapon['damage_type']))
+            {
+                $this->add_battle_line(sprintf($this->battle_quotes['attackfail'], $attacker['name'], $weapon_name, $defender['name']));
+            }
+            else
+            {
+                if ($roll == 20)
+                {
+                    $damage *= 2;                  
+                    $this->add_battle_line(sprintf($this->battle_quotes['attackcritical'], $attacker['name'], $weapon_name, $damage), "(".$roll."/".$chance.")");
+                }
+                else
+                {
+                    $this->add_battle_line(sprintf($this->battle_quotes['attackhit'], $attacker['name'], $weapon_name, $damage), "(".$roll."/".$chance.")");
+                }
+                
+                $damage = max(($damage-$armor), 0);
+                $defender['attributes']['currenthp'] -= $damage;  
+            }
+         
+            if (isset($weapon['extradamage']))
+            {
+                foreach($weapon['extradamage'] as $damage_type)
+                {
+                    $damage_type_name = $damage_type->value;
+                    if ($this->is_immune_damage($defender['damimmunities'], $damage_type))
+                    {
+                        $this->add_battle_line(sprintf($this->battle_quotes['attackextrafail'], $attacker['name'], $damage_type_name, $defender['name']));
+                    }
+                    else
+                    {
+                        $vulnerable_text = '';
+                        $extra_damage = rand(1,3);
+                        $resistance = $this->has_resistance_damage($defender['resistances'], $damage_type);
+                        if ($this->has_vulnerability_damage($defender['vulnerabilities'], $damage_type))
+                        {
+                            $extra_damage += rand(1,3);
+                            $vulnerable_text = $defender['name']." is vulnerable!";
+                        }
+                        $extra_damage = max(($extra_damage-$resistance), 0);
+                        $defender['attributes']['currenthp'] -= $extra_damage;
+                        $this->add_battle_line(sprintf($this->battle_quotes['attackextrahit'], $attacker['name'], $extra_damage, $damage_type_name), $vulnerable_text);
+                    }
+                }
+            }
+
+            if (isset($weapon['lifesteal']))
+            {
+                $heal = ceil(0.1 * $damage);
+                $attacker['attributes']['currenthp'] += $heal;
+                $this->add_battle_line(sprintf($this->battle_quotes['attacklifesteal'], $attacker['name'], $heal));
+                if ($attacker['attributes']['currenthp'] > $attacker['attributes']['maxhp'])
+                {
+                    $attacker['attributes']['currenthp'] = $attacker['attributes']['maxhp'];
+                }
+            }
+        }
+        else
+        {
+            $this->add_battle_line(sprintf($this->battle_quotes['attackmiss'], $attacker['name'], $weapon_name), "(".$roll."/".$chance.")");
+        }
+    }
+
+    private function monster_spell_turn(array $condition_check):void
+    {
+        // just for safety, but Idk
+        if (empty($this->monster['spells']) || !$condition_check['can_cast'])
+        {
+            $this->attack_turn($condition_check, $this->monster, $this->player);
+        }
+
+        $spells = array_merge($this->monster['spells']);   
+        $chosen_spell = 0;
+        $picked_spell = false;
+
+        while($picked_spell == false)
+        {
+            if (empty($spells))
+            {
+                $chosen_spell = 0;
+                $picked_spell = true;
+                break;
+            }
+            elseif (count($spells) == 1)
+            {
+                $chosen_spell = array_shift($spells);
+                $picked_spell = true;
+            }
+            else
+            {
+                $chosen_spell = $spells[ array_rand($spells) ];
+                $picked_spell = true;
+            }
+
+            // now check for the chosen spell is valid or not
+            $spell = Data::get_spell($chosen_spell);
+
+            if ($spell['type'] == 1)
+            {
+                if ($this->monster['attributes']['currenthp'] == $this->monster['attributes']['maxhp'])
+                {
+                    $spells = array_diff($spells,[$chosen_spell]);
+                    $chosen_spell = 0;
+                    $picked_spell = false;
+                }
+            }
+            elseif ($spell['type'] == 2)
+            {
+                if ($this->has_condition($this->player['conditions'], $spell['variable']))
+                {
+                    $spells = array_diff($spells,[$chosen_spell]);
+                    $chosen_spell = 0;
+                    $picked_spell = false;
+                }
+            }
+            elseif ($spell['type'] == 5)
+            {
+                if ($this->has_effect_on($this->monster['effects'], $spell['variable']))
+                {
+                    $spells = array_diff($spells,[$chosen_spell]);
+                    $chosen_spell = 0;
+                    $picked_spell = false;
+                }
+            }
+        }
+
+        if ($chosen_spell != 0)
+        {
+            $this->spell_turn($condition_check, $chosen_spell, $this->monster, $this->player);
+        }
+        else
+        {
+            $this->attack_turn($condition_check, $this->monster, $this->player);
+        }
+    }
+
     // battle functions
     private function per_turn_checks(array &$entity, bool $is_player):void
     {
@@ -121,7 +471,7 @@ class Battle
         {
             foreach($entity['conditions'] as $key => &$value)
             {
-                $condition = get_condition($value[0]);
+                $condition = Data::get_condition($value[0]);
                 $value[1]--;
 
                 if ($value[1] == 0)
@@ -164,6 +514,82 @@ class Battle
             }
         }
     }
+
+    private function init(array &$entity):void
+    {
+        foreach($entity['items'] as $key => $item_id)
+        {
+            if ($item_id != 0)
+            {            
+                $item = Data::get_item($item_id);
+
+                if (!empty($item['enchantments']))
+                {
+                    foreach($item['enchantments'] as $enchantment_id)
+                    {
+                        $enchantment = Data::get_enchantment($enchantment_id);
+
+                        // what does the enchantment do?
+                        switch($enchantment['type'])
+                        {
+                            case EnchantmentType::AttributeBonus:
+                                $entity['attributes'][$enchantment['variable']] += $enchantment['variable2'];
+                                break;
+                            case EnchantmentType::ConditionImmunity: 
+                                if (!$this->has_condition_immunity($entity['condimmunities'], $enchantment['variable']))
+                                {
+                                    array_push($entity['condimmunities'], $enchantment['variable']);
+                                }
+                                break;
+                            case EnchantmentType::DamageResistance:
+                                $current_resistance = $this->has_resistance_damage($entity['resistances'], $enchantment['variable']);
+                                if ($current_resistance == 0)
+                                {
+                                    array_push($entity['resistances'], [$enchantment['variable'], $enchantment['variable2']]);
+                                }
+                                elseif ($current_resistance > 0)
+                                {
+                                    if ($current_resistance < $enchantment['variable2'])
+                                    {
+                                        $resistance_pos = $this->get_resistance_damage($entity['resistances'], $enchantment['variable']);
+                                        $entity['resistances'][$resistance_pos][1] = $enchantment['variable2'];
+                                    }
+                                }
+                                break;
+                            case EnchantmentType::DamageImmunity:
+                                if (!$this->is_immune_damage($entity['damimmunities'], $enchantment['variable']))
+                                {
+                                    array_push($entity['damimmunities'], $enchantment['variable']);
+                                }
+                                break;
+                            case EnchantmentType::WeaponImbuement:
+                                if (!isset($item['extradamage']))
+                                {
+                                    $item['extradamage'] = [];
+                                }
+                                array_push($item['extradamage'], $enchantment['variable']);
+                                break;
+                            case EnchantmentType::WeaponDrain:
+                                if (!isset($item['lifesteal']))
+                                {
+                                    $item['lifesteal'] = 0;
+                                } 
+                                if ($enchantment['variable'] > $item['lifesteal'])
+                                {
+                                    $item['lifesteal'] = $enchantment['variable'];
+                                }
+                                break;
+                            default:
+                                die("Something wrong with enchantments..");
+                        }
+                    }
+                }
+
+                $entity['items'][$key] = $item;
+            }
+        }
+    }
+
 
     private function check_death(array &$entity, bool $is_player):void
     {
@@ -221,7 +647,7 @@ class Battle
 
         foreach($conditions as $condition)
         {
-            $condition = get_condition($condition[0]);
+            $condition = Data::get_condition($condition[0]);
             if ($condition['type'] == 1)
                 $condition_check['is_free'] = false;
             
