@@ -1,7 +1,5 @@
 <?php
 
-require dirname(__DIR__)."/data/data.php";
-
 enum BattleState
 {
     case Win;
@@ -105,8 +103,17 @@ class Battle
                 $this->attack_turn($condition_check, $this->monster, $this->player);
                 break;
             case MonsterClass::Caster:
+                $this->monster_spell_turn($condition_check);
                 break;
             case MonsterClass::Hybrid:
+                if (rand(1,10) < 6)
+                {
+                    $this->attack_turn($condition_check, $this->monster, $this->player);
+                }
+                else
+                {
+                    $this->monster_spell_turn($condition_check);
+                }
                 break;
         }
     }
@@ -153,7 +160,7 @@ class Battle
                     $this->add_battle_line(sprintf($spell['hitquote'], $attacker['name'], $heal));
                 }
                 break;
-            case 2: // cause condition
+            case SpellType::CauseCondition:
                 if ($condition_check['is_charmed'])
                     return;
                 $chance = $this->check($attacker['attributes']['power'], $defender['attributes']['mind']);
@@ -184,7 +191,7 @@ class Battle
                     $this->add_battle_line(sprintf($spell['missquote'], $attacker['name'], $defender['name']));
                 }
                 break;
-            case 3: // do damage
+            case SpellType::DirectDamage:
                 if ($condition_check['is_charmed'])
                     return;
                 $chance = $this->check($attacker['attributes']['power'], $defender['attributes']['speed']);
@@ -215,7 +222,7 @@ class Battle
                     $this->add_battle_line(sprintf($spell['missquote'], $attacker['name'], $defender['name']));
                 }
                 break;
-            case 4: // drain
+            case SpellType::Drain:
                 if ($condition_check['is_charmed'])
                     return;
                 $chance = $this->check($attacker['attributes']['power'], $defender['attributes']['speed']);
@@ -248,7 +255,7 @@ class Battle
                     $this->add_battle_line(sprintf($spell['missquote'], $attacker['name'], $defender['name']));
                 }
                 break;
-            case 5: // activate effect
+            case SpellType::ActivateEffect:
                 $chance = $this->check($attacker['attributes']['power'], 1);
                 $roll = rand(1, 20);
                 if ($roll >= $chance)
@@ -328,7 +335,7 @@ class Battle
         $chance = $this->check($attack, $defense);
         if ($roll >= $chance || $roll == 20)
         {
-            if ($this->is_immune_damage($defender['damimmunities'], $weapon['damage_type']))
+            if ($this->is_immune_damage($defender['damimmunities'], $weapon['damagetype']))
             {
                 $this->add_battle_line(sprintf($this->battle_quotes['attackfail'], $attacker['name'], $weapon_name, $defender['name']));
             }
@@ -484,11 +491,11 @@ class Battle
                 {
                     switch($condition['type'])
                     {
-                        case 1: // can't perform actions
-                        case 3: // can't cast spells
+                        case ConditionType::NoActions:
+                        case ConditionType::NoSpells:
                             $this->add_battle_line(sprintf($condition['activequote'], $entity['name']));
                             break;
-                        case 2: // take damage
+                        case ConditionType::DoDamage:
                             if ($this->is_immune_damage($entity['damimmunities'], $condition['variable']))
                             {
                                 $this->add_battle_line(sprintf($condition['failquote'], $entity['name']));
@@ -648,18 +655,18 @@ class Battle
         foreach($conditions as $condition)
         {
             $condition = Data::get_condition($condition[0]);
-            if ($condition['type'] == 1)
+            if ($condition['type'] == ConditionType::NoActions)
                 $condition_check['is_free'] = false;
             
-            if ($condition['type'] == 3)
+            if ($condition['type'] == ConditionType::NoSpells)
                 $condition_check['can_cast'] = false;
 
-            if ($condition['type'] == 4)
+            if ($condition['type'] == ConditionType::NoOffensiveActions)
                 $condition_check['is_charmed'] = true;
         }
     }
 
-    private function has_resistance_damage(array $resistances, int $damage_type):int
+    private function has_resistance_damage(array $resistances, DamageType $damage_type):int
     {
         if (empty($resistances))
             return 0;
@@ -673,7 +680,7 @@ class Battle
         return 0;
     }
 
-    private function get_resistance_damage(array $resistances, int $damage_type):int
+    private function get_resistance_damage(array $resistances, DamageType $damage_type):int
     {
         if (empty($resistances))
             return 0;
@@ -687,12 +694,12 @@ class Battle
         return 0;
     }
 
-    private function has_vulnerability_damage(array $vulnerabilities, int $damage_type):bool
+    private function has_vulnerability_damage(array $vulnerabilities, DamageType $damage_type):bool
     {
         return in_array($damage_type, $vulnerabilities) == true; 
     }
 
-    private function is_immune_damage(array $damimmunities, int $damage_type):bool
+    private function is_immune_damage(array $damimmunities, DamageType $damage_type):bool
     {
         return in_array($damage_type, $damimmunities) == true;
     }

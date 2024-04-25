@@ -5,7 +5,7 @@
     <?php
         foreach($player['spells'] as $spell_id)
         {
-            $spell = get_spell($spell_id);
+            $spell = Data::get_spell($spell_id);
             echo "<option value=\"".$spell_id."\">".$spell['name']."</option>";
         }   
     ?>    
