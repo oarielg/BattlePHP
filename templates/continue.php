@@ -1,0 +1,1 @@
+<br><br><br><a href="<?php echo $_SERVER['PHP_SELF']; ?>">[Continue]</a>
