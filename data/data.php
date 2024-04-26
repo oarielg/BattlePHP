@@ -2,12 +2,12 @@
 
 // This just represents a REAL database/methods
 
-enum ItemType
+enum ItemType:string
 {
-    case Weapon;
-    case Shield;
-    case Armor;
-    case Ring;
+    case Weapon = 'Weapon';
+    case Shield = 'Shield';
+    case Armor = 'Armor';
+    case Ring = 'Ring';
 }
 
 enum SpellType
@@ -102,27 +102,35 @@ class Data
         unset($_SESSION['monster']);
     }
 
-    public static function get_condition(int $condition_id):array
+    public static function get_condition(int $condition_id = null):array
     {
         global $conditions;
+        if (!$condition_id)
+            return $conditions;
         return $conditions[$condition_id];
     }
 
-    public static function get_spell(int $spell_id):array
+    public static function get_spell(int $spell_id = null):array
     {
         global $spells;
+        if (!$spell_id)
+            return $spells;
         return $spells[$spell_id];
     }
 
-    public static function get_item(int $item_id):array
+    public static function get_item(int $item_id = null):array
     {
         global $items;
+        if (!$item_id)
+            return $items;
         return $items[$item_id];
     }
 
-    public static function get_enchantment(int $enchantment_id):array
+    public static function get_enchantment(int $enchantment_id = null):array
     {
         global $enchantments;
+        if (!$enchantment_id)
+            return $enchantments;
         return $enchantments[$enchantment_id];
     }
 }
@@ -261,7 +269,7 @@ $conditions = [
     ],
     14 => [
         "id" => 14,
-        "name" => "Bleeding",
+        "name" => "Bleeding (Slashing)",
         "type" => ConditionType::DoDamage,
         "variable" => DamageType::Slashing,
         "minduration" => 3,
@@ -272,7 +280,7 @@ $conditions = [
     ],
     15 => [
         "id" => 15,
-        "name" => "Bleeding",
+        "name" => "Bleeding (Piercing)",
         "type" => ConditionType::DoDamage,
         "variable" => DamageType::Piercing,
         "minduration" => 3,

@@ -51,6 +51,12 @@ class MonsterData
 
         return $monster;
     }
+
+    public static function get_all_monsters():array
+    {
+        global $monsters;
+        return $monsters;
+    }
 }
 
 $monsters = [
