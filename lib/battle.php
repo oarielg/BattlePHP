@@ -31,8 +31,8 @@ class Battle
 
         // this should be moved elsewhere
         $this->battle_quotes = [
-            "attackhit" => "<b>%s</b> attacked with <i>%s</i> for <b>%s</b> damage.",
-            "attackcritical" => "Critical hit! <b>%s</b> attacked with <i>%s</i> for <b>%s</b> damage.",
+            "attackhit" => "<b>%s</b> attacked with <i>%s</i> for <b>%s</b> %s damage.",
+            "attackcritical" => "Critical hit! <b>%s</b> attacked with <i>%s</i> for <b>%s</b> %s damage.",
             "attackmiss" => "<b>%s</b> attacked with <i>%s</i> but missed.",
             "attackfail" => "<b>%s</b> attacked with <i>%s</i> but <b>%s</b> is immune!.",
             "attackextrahit" => "<b>%s's</b> attack did <b>%s</b> extra %s damage.",
@@ -182,7 +182,6 @@ class Battle
                             $condition = Data::get_condition($spell['variable']);
                             array_push($defender['conditions'], [$spell['variable'], rand($condition['minduration'], $condition['maxduration'])]);                         
                             $this->add_battle_line(sprintf($spell['hitquote'], $attacker['name'], $defender['name']));
-                            //$this->apply_condition_immediately($defender, $condition);
                         }
                     }
                 }
@@ -341,14 +340,21 @@ class Battle
             }
             else
             {
+                $vulnerable_text = '';
+                if ($this->has_vulnerability_damage($defender['vulnerabilities'], $weapon['damagetype']))
+                {
+                    $damage += rand(1,6);
+                    $vulnerable_text = $defender['name']." is vulnerable!";
+                }
+                $damage_type_name = $weapon['damagetype']->value;
                 if ($roll == 20)
                 {
                     $damage *= 2;                  
-                    $this->add_battle_line(sprintf($this->battle_quotes['attackcritical'], $attacker['name'], $weapon_name, $damage), "(".$roll."/".$chance.")");
+                    $this->add_battle_line(sprintf($this->battle_quotes['attackcritical'], $attacker['name'], $weapon_name, $damage, $damage_type_name), $vulnerable_text);
                 }
                 else
                 {
-                    $this->add_battle_line(sprintf($this->battle_quotes['attackhit'], $attacker['name'], $weapon_name, $damage), "(".$roll."/".$chance.")");
+                    $this->add_battle_line(sprintf($this->battle_quotes['attackhit'], $attacker['name'], $weapon_name, $damage, $damage_type_name), $vulnerable_text);
                 }
                 
                 $damage = max(($damage-$armor), 0);
@@ -394,7 +400,7 @@ class Battle
         }
         else
         {
-            $this->add_battle_line(sprintf($this->battle_quotes['attackmiss'], $attacker['name'], $weapon_name), "(".$roll."/".$chance.")");
+            $this->add_battle_line(sprintf($this->battle_quotes['attackmiss'], $attacker['name'], $weapon_name));
         }
     }
 
@@ -432,7 +438,7 @@ class Battle
             // now check for the chosen spell is valid or not
             $spell = Data::get_spell($chosen_spell);
 
-            if ($spell['type'] == 1)
+            if ($spell['type'] == SpellType::Healing)
             {
                 if ($this->monster['attributes']['currenthp'] == $this->monster['attributes']['maxhp'])
                 {
@@ -441,7 +447,7 @@ class Battle
                     $picked_spell = false;
                 }
             }
-            elseif ($spell['type'] == 2)
+            elseif ($spell['type'] == SpellType::CauseCondition)
             {
                 if ($this->has_condition($this->player['conditions'], $spell['variable']))
                 {
@@ -450,7 +456,7 @@ class Battle
                     $picked_spell = false;
                 }
             }
-            elseif ($spell['type'] == 5)
+            elseif ($spell['type'] == SpellType::ActivateEffect)
             {
                 if ($this->has_effect_on($this->monster['effects'], $spell['variable']))
                 {
@@ -612,12 +618,19 @@ class Battle
             else
             {
                 $state = BattleState::InProgress;
+                $winner = "";
                 if (!$is_player)
+                {
                     $state = BattleState::Win;
+                    $winner = $this->player['name'];
+                }
                 else
+                {
                     $state = BattleState::Loss;
+                    $winner = $this->monster['name'];
+                }
 
-                $this->end_battle($state, $entity['name']);
+                $this->end_battle($state, $winner);
             }
         }
     }
