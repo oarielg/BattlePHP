@@ -365,7 +365,6 @@ class Battle
             {
                 foreach($weapon['extradamage'] as $damage_type)
                 {
-                    $damage_type_name = $damage_type->value;
                     if ($this->is_immune_damage($defender['damimmunities'], $damage_type))
                     {
                         $this->add_battle_line(sprintf($this->battle_quotes['attackextrafail'], $attacker['name'], $damage_type_name, $defender['name']));
@@ -382,7 +381,7 @@ class Battle
                         }
                         $extra_damage = max(($extra_damage-$resistance), 0);
                         $defender['attributes']['currenthp'] -= $extra_damage;
-                        $this->add_battle_line(sprintf($this->battle_quotes['attackextrahit'], $attacker['name'], $extra_damage, $damage_type_name), $vulnerable_text);
+                        $this->add_battle_line(sprintf($this->battle_quotes['attackextrahit'], $attacker['name'], $extra_damage, $damage_type->value), $vulnerable_text);
                     }
                 }
             }

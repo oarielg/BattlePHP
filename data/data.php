@@ -16,7 +16,6 @@ enum SpellType
     case DirectDamage;
     case Drain;
     case CauseCondition;
-    case RemoveCondition;
     case ActivateEffect;
 }
 
@@ -1273,5 +1272,12 @@ $enchantments = [
         "type" => EnchantmentType::WeaponDrain,
         "variable" => 10,
         "variable2" => 0
-    ]
+    ],
+    38 => [
+        "id" => 38,
+        "name" => "Heroism",
+        "type" => EnchantmentType::ConditionImmunity,
+        "variable" => 13,
+        "variable2" => 0
+    ],
 ];
